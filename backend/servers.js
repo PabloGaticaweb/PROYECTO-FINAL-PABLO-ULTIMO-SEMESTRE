@@ -2,6 +2,8 @@ import express from "express";
 import mysql from "mysql2";
 import cors from "cors";
 import dotenv from "dotenv";
+import bcrypt from "bcrypt";
+import jwt from "jsonwebtoken";
 
 
 dotenv.config();
@@ -25,33 +27,73 @@ db.connect(err => {
   console.log("Conectado a MySQL ✅");
 });
 
-// Ruta de prueba
-app.get("/", (req, res) => {
-  res.send("Backend funcionando 🚀");
-});
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Servidor corriendo en http://localhost:${PORT}`);
-});
+// =============================
+// 🔐 Middleware de autenticación JWT
+// =============================
+const SECRET_KEY = process.env.JWT_SECRET || "clave_secreta_segura";
 
-// Ruta de Login
+function verificarToken(req, res, next) {
+  const token = req.headers["authorization"];
+  if (!token)
+    return res.status(403).json({ success: false, message: "Token requerido" });
+
+  jwt.verify(token.replace("Bearer ", ""), SECRET_KEY, (err, decoded) => {
+    if (err)
+      return res
+        .status(401)
+        .json({ success: false, message: "Token inválido o expirado" });
+
+    req.user = decoded; // contiene { id, username, rol }
+    next();
+  });
+}
+
+// =============================
+// 🧑‍💼 RUTA DE LOGIN SEGURA
+// =============================
 app.post("/login", (req, res) => {
   const { username, password } = req.body;
+  const query = "SELECT * FROM usuarios WHERE username = ?";
 
-  const query = "SELECT * FROM usuarios WHERE username = ? AND password = ?";
-  db.query(query, [username, password], (err, result) => {
-    if (err) {
-      return res.status(500).json({ error: "Error en el servidor" });
-    }
+  db.query(query, [username], async (err, result) => {
+    if (err) return res.status(500).json({ success: false, message: "Error en servidor" });
+    if (result.length === 0)
+      return res.status(401).json({ success: false, message: "Usuario no encontrado" });
 
-    if (result.length > 0) {
-      return res.json({ success: true, message: "Login exitoso" });
-    } else {
-      return res.status(401).json({ success: false, message: "Credenciales incorrectas" });
-    }
+    const user = result[0];
+    const isMatch = await bcrypt.compare(password, user.password);
+
+    if (!isMatch)
+      return res.status(401).json({ success: false, message: "Contraseña incorrecta" });
+
+    // Generar token JWT
+    const token = jwt.sign(
+      { id: user.id, username: user.username, rol: user.rol },
+      SECRET_KEY,
+      { expiresIn: "2h" }
+    );
+
+    res.json({
+      success: true,
+      message: "Login exitoso",
+      token,
+      user: { id: user.id, username: user.username, rol: user.rol },
+    });
   });
 });
+
+// =============================
+// 👮 Middleware para validar roles
+// =============================
+function soloAdmin(req, res, next) {
+  if (req.user.rol !== "admin") {
+    return res
+      .status(403)
+      .json({ success: false, message: "Acceso denegado: solo admin" });
+  }
+  next();
+}
 
 // Buscar datos generales de una unidad
 app.get("/unidades/:search", (req, res) => {
@@ -380,4 +422,24 @@ app.get("/api/correlativo", async (req, res) => {
     res.status(500).json({ error: "Error al generar correlativo" });
   }
 });
+
+export const registerUser = async (req, res) => {
+  const { username, password, rol } = req.body;
+
+  try {
+    const hashed = await bcrypt.hash(password, 10);
+
+    const sql = `
+      INSERT INTO usuarios (username, password, rol)
+      VALUES (?, ?, ?)
+    `;
+
+    db.query(sql, [username, hashed, rol], (err) => {
+      if (err) return res.status(500).json({ error: err });
+      res.json({ message: "Usuario registrado exitosamente" });
+    });
+  } catch (error) {
+    res.status(500).json({ error });
+  }
+};
 export default app; 
