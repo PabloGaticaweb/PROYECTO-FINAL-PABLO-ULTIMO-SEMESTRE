@@ -2,20 +2,19 @@ import express from "express";
 import mysql from "mysql2";
 import cors from "cors";
 import dotenv from "dotenv";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-
 
 dotenv.config();
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Conexión a MySQL
+// Enlace o Conexión a MySQL
 const db = mysql.createConnection({
   host: "localhost",
   user: "root",
-  password: "pablouser1",   // tu contraseña de MySQL
+  password: "pablouser1",  
   database: "sistema_furgones"
 });
 
@@ -29,7 +28,7 @@ db.connect(err => {
 
 
 // =============================
-// 🔐 Middleware de autenticación JWT
+// Middleware de autenticación JWT
 // =============================
 const SECRET_KEY = process.env.JWT_SECRET || "clave_secreta_segura";
 
@@ -50,7 +49,7 @@ function verificarToken(req, res, next) {
 }
 
 // =============================
-// 🧑‍💼 RUTA DE LOGIN SEGURA
+// Ruta de Login
 // =============================
 app.post("/login", (req, res) => {
   const { username, password } = req.body;
@@ -64,8 +63,13 @@ app.post("/login", (req, res) => {
     const user = result[0];
     const isMatch = await bcrypt.compare(password, user.password);
 
-    if (!isMatch)
+    if (!isMatch) {
+console.log("🔑 Password ingresado:", password);
+console.log("🧾 Hash en BD:", user.password);
+console.log("✅ ¿Coinciden?:", isMatch);
+
       return res.status(401).json({ success: false, message: "Contraseña incorrecta" });
+    }
 
     // Generar token JWT
     const token = jwt.sign(
@@ -83,8 +87,9 @@ app.post("/login", (req, res) => {
   });
 });
 
+
 // =============================
-// 👮 Middleware para validar roles
+// Middleware para validar roles
 // =============================
 function soloAdmin(req, res, next) {
   if (req.user.rol !== "admin") {
@@ -153,15 +158,6 @@ app.put("/reparaciones/:id", (req, res) => {
   });
 });
 
-// Desactivar reparación (soft delete)
-app.put("/reparaciones/:id/desactivar", (req, res) => {
-  const { id } = req.params;
-  db.query("UPDATE reparacioness SET activo=0 WHERE id=?", [id], (err) => {
-    if (err) return res.status(500).json({ error: "Error en servidor" });
-    res.json({ success: true, message: "Reparación desactivada" });
-  });
-});
-
 
 // Desactivar reparación (soft delete)
 app.put("/reparaciones/:id/desactivar", (req, res) => {
@@ -174,7 +170,7 @@ app.put("/reparaciones/:id/desactivar", (req, res) => {
 });
 
 
-// Ruta para registrar reparaciones
+// Para registrar reparaciones
 app.post("/reparaciones", (req, res) => {
   const { economico, placa_tc, tipo_reparacion, detalle, costo, comentarios, fecha, estacion } = req.body;
 
@@ -287,7 +283,7 @@ app.post("/detalle-costos", (req, res) => {
   });
 });
 
-// Nuevo endpoint: obtener usuario por username
+//obtener usuario por username
 app.get("/usuario/:username", (req, res) => {
   const { username } = req.params;
 
@@ -362,7 +358,7 @@ app.put("/unidades/:economico/estado", (req, res) => {
   const { economico } = req.params;
   const { estado, estacion } = req.body;
 
-  // Si llega estacion, actualizamos ambas columnas
+  // Si llega estacion se actualiza ambas columnas
   if (typeof estacion !== "undefined") {
     db.query(
       "UPDATE unidadess SET estado = ?, estacion = ? WHERE economico = ?",
@@ -373,7 +369,7 @@ app.put("/unidades/:economico/estado", (req, res) => {
       }
     );
   } else {
-    // Si no llega estacion, solo actualizamos estado
+    // Si no llega estacion solo actualizamos estado
     db.query(
       "UPDATE unidadess SET estado = ? WHERE economico = ?",
       [estado, economico],
@@ -385,7 +381,7 @@ app.put("/unidades/:economico/estado", (req, res) => {
   }
 });
 
-// Backend Node.js / Express
+// Obtener correlativo para documentacion fisica
 app.get("/api/correlativo", async (req, res) => {
   try {
     // Obtener el último correlativo
@@ -442,4 +438,6 @@ export const registerUser = async (req, res) => {
     res.status(500).json({ error });
   }
 };
-export default app; 
+app.listen(5000, () => {
+  console.log("Servidor corriendo en http://localhost:5000 ✅");
+});
